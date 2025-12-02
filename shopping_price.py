@@ -5,7 +5,7 @@ import urllib.parse
 
 # --- 페이지 설정 ---
 st.set_page_config(
-    page_title="Smart Shopping Image Finder 🛍️",
+    page_title="Your Shopping Curator 🛍️",
     page_icon="🛒",
     layout="wide"
 )
@@ -49,7 +49,7 @@ st.markdown(
 # --- 상단 배너 ---
 st.image("https://cdn.pixabay.com/photo/2016/10/10/21/04/shopping-1727984_1280.png", use_column_width=True)
 st.markdown("## 🛍️ Your Shopping Curator")
-st.markdown("원하는 옷 종류, 색상, 디자인을 입력하면 관련 이미지를 바로 보여줍니다!")
+st.markdown("원하는 옷 종류, 색상, 디자인을 입력하면 관련 이미지를 바로 보여주는 스마트 이미지 검색기입니다!")
 
 # --- 사용자 입력 ---
 with st.form(key="search_form"):
@@ -81,10 +81,14 @@ def search_google_images(query, max_results=9):
     resp = requests.get(url, headers=headers, timeout=10)
     soup = BeautifulSoup(resp.text, "html.parser")
     img_tags = soup.find_all("img")
+
     img_urls = []
     for img in img_tags:
         src = img.get("src")
-        if src and src.startswith("http"):
+        if not src:
+            continue
+        # 실제 이미지 URL만 추출 (로고/깨진 이미지 제거)
+        if src.startswith("http") and "gstatic.com" not in src:
             img_urls.append(src)
         if len(img_urls) >= max_results:
             break
@@ -95,12 +99,12 @@ def display_images_3col(img_urls):
     if not img_urls:
         st.warning("검색 결과가 없습니다!")
         return
-    # 3개씩 분할
+    # 3개씩 분할하여 컬럼 배치
     for i in range(0, len(img_urls), 3):
         cols = st.columns(3)
         for idx, url in enumerate(img_urls[i:i+3]):
             with cols[idx]:
-                st.image(url, use_column_width=True, caption=None)
+                st.image(url, use_column_width=True)
 
 # --- 검색 버튼 동작 ---
 if submitted:
