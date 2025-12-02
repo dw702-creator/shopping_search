@@ -46,8 +46,7 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-# --- 상단 배너 ---
-st.image("https://cdn.pixabay.com/photo/2016/10/10/21/04/shopping-1727984_1280.png", use_column_width=True)
+# --- 제목 및 설명 ---
 st.markdown("## 🛍️ Your Shopping Curator")
 st.markdown("원하는 옷 종류, 색상, 디자인을 입력하면 관련 이미지를 바로 보여주는 스마트 이미지 검색기입니다!")
 
