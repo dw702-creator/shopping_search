@@ -1,85 +1,77 @@
 import streamlit as st
-import json
+import requests
+from bs4 import BeautifulSoup
+import urllib.parse
+import time
 
-# --- 예시 데이터베이스 ---
-# 실제로는 CSV, DB, 외부 API 등으로 바꿀 수 있음
-PRODUCTS = [
-    {
-        "id": 1,
-        "name": "Grey Hoodie with Black Lettering",
-        "type": "hoodie",
-        "color": "grey",
-        "design": "black_text",
-        "description": "A comfy grey hoodie with bold black letter print on chest."
-    },
-    {
-        "id": 2,
-        "name": "Black Hoodie with White Design",
-        "type": "hoodie",
-        "color": "black",
-        "design": "white_graphic",
-        "description": "Stylish black hoodie with white graphic print."
-    },
-    {
-        "id": 3,
-        "name": "Grey Sweatshirt Plain",
-        "type": "sweatshirt",
-        "color": "grey",
-        "design": "plain",
-        "description": "Simple grey sweatshirt, no print."
-    },
-    {
-        "id": 4,
-        "name": "Blue Hoodie with Black Text",
-        "type": "hoodie",
-        "color": "blue",
-        "design": "black_text",
-        "description": "Blue hoodie with black letters."
-    },
-    # ... 필요하면 더 추가
-]
+st.set_page_config(page_title="Clothing Search Online", layout="wide")
+st.title("온라인 의류 검색기")
 
-# --- 매칭 함수 ---
-def matches(product, type_, color, design_keywords):
-    if type_ and product.get("type") != type_:
-        return False
-    if color and product.get("color") != color:
-        return False
-    if design_keywords:
-        # design_keywords는 여러 단어일 수 있음 (예: ["black","text"])
-        # product["design"] 또는 description에 포함 여부 체크
-        d = product.get("design", "") + " " + product.get("description", "")
-        for kw in design_keywords:
-            if kw.lower() not in d.lower():
-                return False
-    return True
+type_ = st.text_input("종류 (예: hoodie, sweatshirt, jacket, 티셔츠 등)", "")
+color = st.text_input("색깔 (예: grey, black, white, blue 등)", "")
+design = st.text_input("디자인 키워드 (예: black text, graphic, 로고 등)", "")
 
-def search_products(type_, color, design_keywords):
+SEARCH_COUNT = st.sidebar.number_input("최대 검색 결과 수 (per 사이트)", min_value=5, max_value=50, value=10)
+
+def build_query(type_, color, design):
+    pieces = []
+    if type_:
+        pieces.append(type_)
+    if color:
+        pieces.append(color)
+    if design:
+        pieces += design.split()
+    return " ".join(pieces)
+
+def search_naver_shopping(query, max_results=10):
+    url = "https://search.shopping.naver.com/search/all"
+    params = {"query": query}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    resp = requests.get(url, params=params, headers=headers, timeout=10)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+    items = []
+    for item in soup.select("a.basicList_link__JLQJf")[:max_results]:
+        title = item.get_text().strip()
+        link = item.get("href")
+        items.append({"title": title, "link": link, "source": "Naver Shopping"})
+    return items
+
+def search_google(query, max_results=10):
+    # Note: 구글은 크롤링 방지 정책이 있음 — 잘 동작하지 않을 수 있음
+    url = "https://www.google.com/search"
+    params = {"q": query + " 의류", "num": max_results}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    resp = requests.get(url, params=params, headers=headers, timeout=10)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
     results = []
-    for p in PRODUCTS:
-        if matches(p, type_, color, design_keywords):
-            results.append(p)
+    for g in soup.select("div.g")[:max_results]:
+        a = g.select_one("a")
+        if not a:
+            continue
+        title = a.get_text().strip()
+        link = a.get("href")
+        # 간단 필터: title 또는 snippet 안에 색깔/디자인 키워드 포함 여부 확인
+        results.append({"title": title, "link": link, "source": "Google"})
     return results
 
-# --- Streamlit UI ---
-st.title("Simple Clothing Search")
-
-st.write("원하는 옷: 종류, 색깔, 디자인 키워드를 입력하세요.")
-
-type_ = st.text_input("종류 (예: hoodie, sweatshirt 등)", value="")
-color = st.text_input("색깔 (예: grey, black, blue …)", value="")
-design = st.text_input("디자인 키워드 (예: black text, white graphic)", value="")
-
 if st.button("검색"):
-    design_keywords = design.split()
-    results = search_products(type_.lower().strip() or None,
-                              color.lower().strip() or None,
-                              design_keywords)
-    if results:
-        st.write(f"{len(results)}개 찾음.")
-        for p in results:
-            st.write(f"**{p['name']}** (ID: {p['id']}) — 색상: {p['color']}, 디자인: {p['design']}")
-            st.write(p.get("description", ""))
-    else:
-        st.write("조건에 맞는 상품이 없습니다.")
+    query = build_query(type_.lower(), color.lower(), design.lower())
+    st.write("🔎 검색어:", query)
+    results = []
+    try:
+        results += search_naver_shopping(query, SEARCH_COUNT)
+    except Exception as e:
+        st.write("네이버 쇼핑 검색 실패:", e)
+    try:
+        results += search_google(query, SEARCH_COUNT)
+    except Exception as e:
+        st.write("구글 검색 실패:", e)
 
+    if results:
+        st.write(f"{len(results)}개 결과 (최대 {SEARCH_COUNT} per 사이트).")
+        for r in results:
+            st.write(f"- **{r['title']}** — {r['source']} — [링크 열기]({r['link']})")
+    else:
+        st.write("검색 결과가 없습니다. 검색어를 바꿔 보세요.")
