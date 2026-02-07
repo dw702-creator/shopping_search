@@ -1,5 +1,7 @@
 import streamlit as st
 import pdfplumber
+import pytesseract
+from pdf2image import convert_from_bytes
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.pagesizes import A4
@@ -10,22 +12,28 @@ import os
 import re
 
 # ---------------- PDF 텍스트 추출 ----------------
-def extract_text_from_pdf(file):
+def extract_text_pdfplumber(file):
     text = ""
     with pdfplumber.open(file) as pdf:
         for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-    return text
+            t = page.extract_text()
+            if t:
+                text += t + "\n"
+    return text.strip()
 
+# ---------------- OCR 처리 ----------------
+def extract_text_ocr(file_bytes):
+    images = convert_from_bytes(file_bytes)
+    text = ""
+    for img in images:
+        text += pytesseract.image_to_string(img, lang="eng") + "\n"
+    return text.strip()
 
 # ---------------- 텍스트 정리 ----------------
 def clean_text(text):
-    text = re.sub(r'\n{2,}', '\n\n', text)   # 과도한 줄바꿈 제거
-    text = re.sub(r' +', ' ', text)          # 중복 공백 제거
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r' +', ' ', text)
     return text.strip()
-
 
 # ---------------- 시험지 PDF 생성 ----------------
 def create_exam_pdf(text, original_filename):
@@ -46,8 +54,7 @@ def create_exam_pdf(text, original_filename):
             fontSize=18,
             alignment=TA_CENTER,
             spaceAfter=20,
-            leading=22,
-            bold=True
+            leading=22
         ),
         "info": ParagraphStyle(
             "info",
@@ -73,7 +80,6 @@ def create_exam_pdf(text, original_filename):
     ))
     story.append(Spacer(1, 12))
 
-    # 본문
     for para in text.split("\n\n"):
         story.append(Paragraph(para, styles["body"]))
 
@@ -81,30 +87,37 @@ def create_exam_pdf(text, original_filename):
     buffer.seek(0)
 
     base = os.path.splitext(original_filename)[0]
-    output_name = f"{base}_새시험지.pdf"
+    output_name = f"{base}_OCR시험지.pdf"
 
     return buffer, output_name
 
-
 # ---------------- Streamlit UI ----------------
-st.set_page_config(page_title="Blank Test Generator (PDF)", layout="wide")
-st.title("📄 Blank Test Generator (PDF)")
-st.markdown("PDF 파일의 텍스트를 인식하여 **새로운 시험지 형태의 PDF**로 재생성합니다.")
+st.set_page_config(page_title="Blank Test Generator (OCR PDF)", layout="wide")
+st.title("📄 Blank Test Generator (OCR PDF)")
+st.markdown("텍스트 PDF와 **스캔 PDF(OCR)** 모두 지원하여 깔끔한 시험지 PDF로 재생성합니다.")
 
 uploaded_pdf = st.file_uploader("PDF 파일 업로드", type=["pdf"])
 
 if uploaded_pdf:
     if st.button("시험지 PDF 생성"):
         try:
-            raw_text = extract_text_from_pdf(uploaded_pdf)
-            clean = clean_text(raw_text)
+            file_bytes = uploaded_pdf.read()
 
-            if not clean:
+            # 1차: 텍스트 PDF 시도
+            text = extract_text_pdfplumber(BytesIO(file_bytes))
+
+            # 실패 시 OCR
+            if not text:
+                st.info("텍스트 PDF가 아니어서 OCR을 실행합니다...")
+                text = extract_text_ocr(file_bytes)
+
+            if not text:
                 st.error("PDF에서 텍스트를 인식하지 못했습니다.")
             else:
+                clean = clean_text(text)
                 pdf_buffer, filename = create_exam_pdf(clean, uploaded_pdf.name)
-                st.success("시험지 PDF가 생성되었습니다!")
 
+                st.success("시험지 PDF가 생성되었습니다!")
                 st.download_button(
                     label="⬇️ 시험지 PDF 다운로드",
                     data=pdf_buffer,
