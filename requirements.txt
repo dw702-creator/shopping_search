@@ -1,6 +1,10 @@
-streamlit
-pdfplumber
-reportlab
+streamlit>=1.30
+pdfplumber>=0.10.0
+pdfminer.six>=20221105
+pytesseract>=0.3.10
+pdf2image>=1.17.0
+reportlab>=4.0.0
+Pillow>=10.0.0
 
 
 
