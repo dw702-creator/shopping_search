@@ -1,7 +1,9 @@
+import streamlit as st
 from docx import Document
 from docx.shared import Cm
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+import tempfile
 
 
 def set_cell_border(cell, top=True, bottom=True, left=True, right=True):
@@ -29,51 +31,70 @@ def set_cell_border(cell, top=True, bottom=True, left=True, right=True):
     tcPr.append(borders)
 
 
-def create_exam_doc(text, filename="시험지.docx"):
+def create_exam_doc(text):
     doc = Document()
 
-    # 여백 설정
     section = doc.sections[0]
     section.top_margin = Cm(2)
     section.bottom_margin = Cm(2)
     section.left_margin = Cm(2)
     section.right_margin = Cm(2)
 
-    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    sentences = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        sentences.extend([s.strip() for s in line.split(".") if s.strip()])
 
-    for line in lines:
-        # 문제 하나당 테이블 하나
+    for s in sentences:
         table = doc.add_table(rows=1, cols=2)
         table.autofit = False
 
-        left_cell = table.cell(0, 0)
-        right_cell = table.cell(0, 1)
+        left = table.cell(0, 0)
+        right = table.cell(0, 1)
 
-        left_cell.width = Cm(8)
-        right_cell.width = Cm(8)
+        left.width = Cm(8)
+        right.width = Cm(8)
 
-        # 문제 ↔ 메모 구분선 + 문제 간 구분선
-        set_cell_border(left_cell, top=True, bottom=True, left=True, right=True)
-        set_cell_border(right_cell, top=True, bottom=True, left=False, right=True)
+        set_cell_border(left, top=True, bottom=True, left=True, right=True)
+        set_cell_border(right, top=True, bottom=True, left=False, right=True)
 
-        # 왼쪽: 문제 텍스트 (번호 없음)
-        p = left_cell.paragraphs[0]
-        p.text = line
-        p.paragraph_format.space_after = Cm(0.4)
-
-        # 오른쪽: 메모 공간
+        left.paragraphs[0].text = s + "."
         for _ in range(6):
-            right_cell.add_paragraph("")
+            right.add_paragraph("")
 
-        doc.add_paragraph("")  # 문제 사이 여백
+        doc.add_paragraph("")
 
-    doc.save(filename)
-    return filename
+    return doc
 
 
-if __name__ == "__main__":
-    sample_text = """Artificial intelligence is changing education.
-Students use AI tools for writing assignments.
-Teachers need new ways to assess learning outcomes."""
+# ---------------- Streamlit UI ---------------- #
 
-    create_exam_doc(sample_text, "메모형_시험지.docx")
+st.set_page_config(page_title="Blank Test Generator", layout="centered")
+
+st.title("Blank Test Generator")
+st.write("텍스트를 입력하면 **문제 + 메모형 시험지 Word 파일**을 생성합니다.")
+
+input_text = st.text_area(
+    "분석할 영어 지문을 입력하세요",
+    height=300,
+    placeholder="여기에 시험지 텍스트를 붙여 넣으세요."
+)
+
+if st.button("시험지 생성"):
+    if not input_text.strip():
+        st.warning("텍스트를 입력해주세요.")
+    else:
+        doc = create_exam_doc(input_text)
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        doc.save(tmp.name)
+
+        with open(tmp.name, "rb") as f:
+            st.download_button(
+                label="Word 파일 다운로드",
+                data=f,
+                file_name="시험지_분석용.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
