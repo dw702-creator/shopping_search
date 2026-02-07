@@ -1,73 +1,79 @@
-import streamlit as st
 from docx import Document
-from docx.shared import Pt, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from io import BytesIO
+from docx.shared import Cm
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
-# ---------------- Word 시험지 생성 ----------------
-def create_exam_doc(text):
+
+def set_cell_border(cell, top=True, bottom=True, left=True, right=True):
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    borders = OxmlElement('w:tcBorders')
+
+    def add_border(name):
+        border = OxmlElement(f'w:{name}')
+        border.set(qn('w:val'), 'single')
+        border.set(qn('w:sz'), '6')
+        border.set(qn('w:space'), '0')
+        border.set(qn('w:color'), 'auto')
+        borders.append(border)
+
+    if top:
+        add_border('top')
+    if bottom:
+        add_border('bottom')
+    if left:
+        add_border('left')
+    if right:
+        add_border('right')
+
+    tcPr.append(borders)
+
+
+def create_exam_doc(text, filename="시험지.docx"):
     doc = Document()
 
+    # 여백 설정
     section = doc.sections[0]
-    section.top_margin = Inches(0.7)
-    section.bottom_margin = Inches(0.7)
-    section.left_margin = Inches(0.7)
-    section.right_margin = Inches(0.7)
+    section.top_margin = Cm(2)
+    section.bottom_margin = Cm(2)
+    section.left_margin = Cm(2)
+    section.right_margin = Cm(2)
 
-    # 제목
-    title = doc.add_paragraph("시험지")
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = title.runs[0]
-    run.bold = True
-    run.font.size = Pt(16)
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
 
-    info = doc.add_paragraph("반: ________   이름: ________   점수: ________   선생님 확인: ________")
-    info.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    info.runs[0].font.size = Pt(11)
+    for line in lines:
+        # 문제 하나당 테이블 하나
+        table = doc.add_table(rows=1, cols=2)
+        table.autofit = False
 
-    doc.add_paragraph("")
+        left_cell = table.cell(0, 0)
+        right_cell = table.cell(0, 1)
 
-    # 2열 테이블 (문제 / 메모)
-    table = doc.add_table(rows=1, cols=2)
-    table.columns[0].width = Inches(3.5)
-    table.columns[1].width = Inches(3.5)
+        left_cell.width = Cm(8)
+        right_cell.width = Cm(8)
 
-    # 입력 텍스트를 문단 단위로 분리
-    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+        # 문제 ↔ 메모 구분선 + 문제 간 구분선
+        set_cell_border(left_cell, top=True, bottom=True, left=True, right=True)
+        set_cell_border(right_cell, top=True, bottom=True, left=False, right=True)
 
-    left_cell = table.cell(0, 0)
-    right_cell = table.cell(0, 1)
+        # 왼쪽: 문제 텍스트 (번호 없음)
+        p = left_cell.paragraphs[0]
+        p.text = line
+        p.paragraph_format.space_after = Cm(0.4)
 
-    for i, para in enumerate(paragraphs, start=1):
-        p = left_cell.add_paragraph(f"{i}. {para}")
-        p.runs[0].font.size = Pt(11)
+        # 오른쪽: 메모 공간
+        for _ in range(6):
+            right_cell.add_paragraph("")
 
-        memo = right_cell.add_paragraph("\n\n\n")  # 메모 공간
-        memo.runs[0].font.size = Pt(11)
+        doc.add_paragraph("")  # 문제 사이 여백
 
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
+    doc.save(filename)
+    return filename
 
-# ---------------- Streamlit UI ----------------
-st.set_page_config(page_title="시험지 생성기", layout="wide")
-st.title("📝 시험지 생성기 (문제 + 메모 공간)")
 
-input_text = st.text_area(
-    "시험지로 만들 텍스트를 입력하세요",
-    height=300,
-    placeholder="여기에 문제로 사용할 텍스트를 입력하세요.\n문단 단위로 나뉩니다."
-)
+if __name__ == "__main__":
+    sample_text = """Artificial intelligence is changing education.
+Students use AI tools for writing assignments.
+Teachers need new ways to assess learning outcomes."""
 
-if input_text.strip():
-    if st.button("시험지 Word 파일 생성"):
-        file = create_exam_doc(input_text)
-        st.download_button(
-            label="⬇️ 시험지 다운로드 (.docx)",
-            data=file,
-            file_name="시험지_문제+메모.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-else:
-    st.info("텍스트를 입력하면 시험지를 생성할 수 있습니다.")
+    create_exam_doc(sample_text, "메모형_시험지.docx")
